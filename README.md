@@ -92,14 +92,18 @@ email:
   body_template: |
     こちらはメールキューのアラートメールです。
     メールキューがしきい値を超えました。
+```
 
 ## 使い方
 
-`config.yaml`とバイナリは同一ディレクトリに置いてください
+config.yamlとバイナリは同一ディレクトリに置いてください
+
 ```sh
 ./mailq-monitor
 ```
-あるいは
+
+あるいは下記のように実行することができます。
+
 ```sh
 PS C:\Users\mailqguys\work> dir
 

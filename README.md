@@ -95,7 +95,27 @@ email:
 
 ## 使い方
 
-./
+`config.yaml`とバイナリは同一ディレクトリに置いてください
+```sh
+./mailq-monitor
+```
+あるいは
+```sh
+PS C:\Users\mailqguys\work> dir
+
+
+    ディレクトリ: C:\Users\gigab\work
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----   2025/02/23 (日)      9:59           1751 config.yaml
+-a----   2025/02/23 (日)      9:58        6369792 mailq-monitor.exe
+
+
+PS C:\Users\mailqguys\work> .\mailq-monitor.exe
+2025/02/23 10:00:20 Email alert sent successfully
+```
 
 ## サンプル
 

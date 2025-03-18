@@ -31,16 +31,18 @@ servers:
 # smtp_server: SMTPサーバのIPアドレス or ホスト名 (複数指定不可)
 # smtp_port: SMTPサーバのポート番号
 # from: 送信元メールアドレス
-# to: 送信先メールアドレス (複数指定不可)
+# to: 送信先メールアドレス (複数指定可)
 # subject: メールの件名
 # messages: メールの本文 (アラートに付与するメッセージです。複数行可)
 email:
   smtp_server: "192.168.56.201"
   smtp_port: "25"
   from: "alerts@example.com"
-  to: "test1@example.com"
+  to:
+    - "test1@example.com"
+    - "test2@example.com"
+    - "test3@example.com"
   subject: "Mail Queue Alert"
   messages: |
     こちらはメールキューのアラートメールです。
     メールキューがしきい値を超えました。
-    

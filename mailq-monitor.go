@@ -30,12 +30,12 @@ type Server struct {
 }
 
 type Email struct {
-	SMTPServer string `yaml:"smtp_server"`
-	SMTPPort   string `yaml:"smtp_port"`
-	From       string `yaml:"from"`
-	To         string `yaml:"to"`
-	Subject    string `yaml:"subject"`
-	Message    string `yaml:"messages"`
+	SMTPServer string   `yaml:"smtp_server"`
+	SMTPPort   string   `yaml:"smtp_port"`
+	From       string   `yaml:"from"`
+	To         []string `yaml:"to"` // 複数のメールアドレスをサポート
+	Subject    string   `yaml:"subject"`
+	Message    string   `yaml:"messages"`
 }
 
 func loadConfig(filename string) (*Config, error) {
@@ -126,7 +126,7 @@ func sendEmail(emailConfig Email, alerts []string) error {
 	// メールのヘッダーとボディを作成
 	body := fmt.Sprintf("%s\n%s", emailConfig.Message, strings.Join(alerts, "\n"))
 	subject := emailConfig.Subject
-	msg := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n%s", emailConfig.From, emailConfig.To, subject, body)
+	msg := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n%s", emailConfig.From, strings.Join(emailConfig.To, ", "), subject, body)
 
 	// SMTPサーバーに接続してメールを送信
 	addr := fmt.Sprintf("%s:%s", emailConfig.SMTPServer, emailConfig.SMTPPort)
@@ -147,8 +147,10 @@ func sendEmail(emailConfig Email, alerts []string) error {
 	if err := client.Mail(emailConfig.From); err != nil {
 		return fmt.Errorf("failed to set From address: %v", err)
 	}
-	if err := client.Rcpt(emailConfig.To); err != nil {
-		return fmt.Errorf("failed to set To address: %v", err)
+	for _, addr := range emailConfig.To {
+		if err := client.Rcpt(addr); err != nil {
+			return fmt.Errorf("failed to set To address: %v", err)
+		}
 	}
 
 	// DATAコマンドを送信してメールヘッダーとボディを送信

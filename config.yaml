@@ -1,10 +1,10 @@
-# SSHコマンドに関する設定です
-# 必要に応じて変更してください
 #
-# user: SSH接続するユーザ名
-# password: SSH接続するユーザのパスワード (省略可、省略するとssh-agentを使用します)
-# host: SSH接続するホスト名
-# port: SSH接続するポート番号
+# SSH Connect
+#
+# user: ユーザ名
+# password: パスワード (省略可、省略するとssh-agentを使用します)
+# host: ホスト名 or IPアドレス 
+# port: ポート番号
 # commands: 実行するコマンド (コマンドは1つです。thoresholdと比較するため数字で返ってくる必要があります)
 # threshold: アラートを発生させるしきい値
 #
@@ -26,8 +26,8 @@ servers:
     commands: "sudo find /var/spool/postfix | wc -l"
     threshold: 10
 
-# メール送信に関する設定です
-# STARTTLSは未対応です.必要に応じて変更してください
+# Mail Alert Config 
+# メール送信に関する設定です。 STARTTLSは未対応です
 #
 # smtp_server: SMTPサーバのIPアドレス or ホスト名 (複数指定不可)
 # smtp_port: SMTPサーバのポート番号

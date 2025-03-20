@@ -87,7 +87,15 @@ email:
   smtp_server: "192.168.56.201"
   smtp_port: "25"
   from: "alerts@example.com"
-  to: "test1@example.com"
+  to:
+    - "test1@example.com"
+    - "test2@example.com"
+  cc:
+    - "cc1@example.com"
+    - "cc2@example.com"
+  bcc:
+    - "bcc1@example.com"
+    - "bcc2@example.com"
   subject: "Mail Queue Alert"
   body_template: |
     こちらはメールキューのアラートメールです。
@@ -105,27 +113,16 @@ config.yamlとバイナリは同一ディレクトリに置いてください
 あるいは下記のように実行することができます。
 
 ```sh
-PS C:\Users\mailqguys\work> dir
-
-
-    ディレクトリ: C:\Users\gigab\work
-
-
-Mode                 LastWriteTime         Length Name
-----                 -------------         ------ ----
--a----   2025/02/23 (日)      9:59           1751 config.yaml
--a----   2025/02/23 (日)      9:58        6369792 mailq-monitor.exe
-
-
 PS C:\Users\mailqguys\work> .\mailq-monitor.exe
-2025/02/23 10:00:20 Email alert sent successfully
+2025/03/20 10:00:20 Email alert sent successfully
 ```
 
 ## サンプル
 
 ```
 From: alerts@example.com
-To: test1@example.com
+To: test1@example.com, test2@example.com
+Cc: cc1@example.com, cc2@example.com
 Subject: Mail Queue Alert
 
 こちらはメールキューのアラートメールです。

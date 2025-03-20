@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/smtp"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,12 +25,12 @@ type Config struct {
 
 // Server構造体: 各サーバーの設定を定義
 type Server struct {
-	User      string `yaml:"user"`      // SSH接続ユーザー名
-	Password  string `yaml:"password"`  // SSH接続パスワード（省略可能）
-	Host      string `yaml:"host"`      // サーバーのホスト名またはIPアドレス
-	Port      string `yaml:"port"`      // SSH接続ポート番号（省略可能）
-	Commands  string `yaml:"commands"`  // 実行するコマンド
-	Threshold int    `yaml:"threshold"` // アラートを発生させるしきい値
+	User      string `yaml:"user"`               // SSH接続ユーザー名
+	Password  string `yaml:"password,omitempty"` // SSH接続パスワード（省略可能）
+	Host      string `yaml:"host"`               // サーバーのホスト名またはIPアドレス
+	Port      string `yaml:"port,omitempty"`     // SSH接続ポート番号（省略可能）
+	Commands  string `yaml:"commands"`           // 実行するコマンド
+	Threshold int    `yaml:"threshold"`          // アラートを発生させるしきい値
 }
 
 // デフォルトポートを取得するヘルパー関数
@@ -48,7 +50,7 @@ type Email struct {
 	Cc         []string `yaml:"cc,omitempty"`  // Cc（カーボンコピー）宛先、省略可能
 	Bcc        []string `yaml:"bcc,omitempty"` // Bcc（ブラインドカーボンコピー）宛先、省略可能
 	Subject    string   `yaml:"subject"`       // メールの件名
-	Message    string   `yaml:"messages"`      // メール本文のテンプレート
+	Messages   string   `yaml:"messages"`      // メール本文のテンプレート
 }
 
 // 設定ファイルを読み込む
@@ -65,6 +67,81 @@ func loadConfig(filename string) (*Config, error) {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	return &config, nil
+}
+
+// validateConfig: 設定ファイルの入力チェックを行う
+func validateConfig(config Config) error {
+	// サーバー設定のチェック
+	if len(config.Servers) == 0 {
+		return errors.New("no servers defined in the configuration")
+	}
+
+	for i, server := range config.Servers {
+
+		// アカウント名のバリデーション
+		var validUsernameRegex = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+		if server.User == "" || !validUsernameRegex.MatchString(server.User) {
+			return fmt.Errorf("server[%d]: 'user' is required", i)
+		}
+		if server.Host == "" {
+			return fmt.Errorf("server[%d]: 'host' is required", i)
+		}
+
+		// ホスト名またはIPv4アドレスのバリデーション
+		var validHostnameRegex = regexp.MustCompile(`^(([a-zA-Z0-9](-?[a-zA-Z0-9])*)\.)*([A-Za-z0-9](-?[A-Za-z0-9])*)$`)
+		if !validHostnameRegex.MatchString(server.Host) {
+			ip := net.ParseIP(server.Host)
+			if ip == nil || ip.To4() == nil {
+				return fmt.Errorf("server[%d]: 'host' must be a valid hostname or IPv4 address", i)
+			}
+		}
+		if server.Commands == "" {
+			return fmt.Errorf("server[%d]: 'commands' is required", i)
+		}
+
+		// Linuxコマンドとして有効かを検証
+		var validCommandRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-./\|\s><{},=]+$`)
+		if !validCommandRegex.MatchString(server.Commands) {
+			return fmt.Errorf("server[%d]: 'commands' contains invalid characters", i)
+		}
+		if server.Threshold < 0 {
+			return fmt.Errorf("server[%d]: 'threshold' must be zero or a positive integer", i)
+		}
+		// デフォルトポートを設定 (省略されている場合)
+		if server.Port == "" {
+			server.Port = "22"
+		}
+	}
+
+	// メール設定のチェック
+	email := config.Email
+	if email.SMTPServer == "" {
+		return errors.New("'smtp_server' is required in email configuration")
+	}
+	port, err := strconv.Atoi(email.SMTPPort)
+	if err != nil || port < 1 || port > 65535 {
+		return errors.New("'smtp_port' must be a valid number between 1 and 65535")
+	}
+	if email.From == "" {
+		return errors.New("'from' is required in email configuration")
+	}
+	var validEmailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !validEmailRegex.MatchString(email.From) {
+		return errors.New("'from' must be a valid email address")
+	}
+	for fieldName, recipients := range map[string][]string{
+		"to":  email.To,
+		"cc":  email.Cc,
+		"bcc": email.Bcc,
+	} {
+		for i, recipient := range recipients {
+			if !validEmailRegex.MatchString(recipient) {
+				return fmt.Errorf("'%s[%d]' must be a valid email address", fieldName, i)
+			}
+		}
+	}
+
+	return nil
 }
 
 // SSHコマンドを実行する
@@ -145,7 +222,7 @@ func sendEmail(emailConfig Email, alerts []string) error {
 	}
 
 	// メール本文を作成
-	body := fmt.Sprintf("%s\n\n%s", emailConfig.Message, strings.Join(alerts, "\n"))
+	body := fmt.Sprintf("%s\n\n%s", emailConfig.Messages, strings.Join(alerts, "\n")) // 修正: Message → Messages
 	msg := fmt.Sprintf("From: %s\nTo: %s\n",
 		emailConfig.From,
 		strings.Join(emailConfig.To, ", "),
@@ -206,6 +283,11 @@ func main() {
 	config, err := loadConfig("config.yaml")
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
+	}
+
+	// 設定ファイルの入力チェック
+	if err := validateConfig(*config); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
 	}
 
 	var alerts []string

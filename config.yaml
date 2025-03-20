@@ -12,8 +12,8 @@ servers:
   - user: "vagrant"
     password: "vagrant"
     host: "192.168.56.201"
-    commands: "sudo find /var/spool/postfix/{maildrop,incoming,active,deferred,hold} -type f 2>/dev/null | wc -l"
-    threshold: 0
+    commands: "sudo find /var/spool/postfix/{maildrop,incoming,active,deferred,hold} -type f 1>/dev/null | wc -l"
+    threshold: 10
   - user: "vagrant"
     password: "vagrant"
     host: "192.168.56.202"
@@ -39,7 +39,7 @@ servers:
 # messages: メールの本文 (アラートに付与するメッセージです。複数行可)
 email:
   smtp_server: "192.168.56.201"
-  smtp_port: "25"
+  smtp_port: 25
   from: "alerts@example.com"
   to:
     - "test1@example.com"

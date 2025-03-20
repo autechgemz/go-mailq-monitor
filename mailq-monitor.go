@@ -15,203 +15,201 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Config構造体: 設定ファイル全体の構造を定義
 type Config struct {
-	Servers []Server `yaml:"servers"`
-	Email   Email    `yaml:"email"`
+	Servers []Server `yaml:"servers"` // サーバー設定のリスト
+	Email   Email    `yaml:"email"`   // メール送信設定
 }
 
+// Server構造体: 各サーバーの設定を定義
 type Server struct {
-	User      string `yaml:"user"`
-	Password  string `yaml:"password"`
-	Host      string `yaml:"host"`
-	Port      string `yaml:"port"`
-	Commands  string `yaml:"commands"`
-	Threshold int    `yaml:"threshold"`
+	User      string `yaml:"user"`      // SSH接続ユーザー名
+	Password  string `yaml:"password"`  // SSH接続パスワード（省略可能）
+	Host      string `yaml:"host"`      // サーバーのホスト名またはIPアドレス
+	Port      string `yaml:"port"`      // SSH接続ポート番号（省略可能）
+	Commands  string `yaml:"commands"`  // 実行するコマンド
+	Threshold int    `yaml:"threshold"` // アラートを発生させるしきい値
 }
 
+// デフォルトポートを取得するヘルパー関数
+func (s *Server) GetPort() string {
+	if s.Port == "" {
+		return "22" // デフォルトポート
+	}
+	return s.Port
+}
+
+// Email構造体: メール送信の設定を定義
 type Email struct {
-	SMTPServer string `yaml:"smtp_server"`
-	SMTPPort   string `yaml:"smtp_port"`
-	From       string `yaml:"from"`
-	To         string `yaml:"to"`
-	Subject    string `yaml:"subject"`
-	Message    string `yaml:"messages"`
+	SMTPServer string   `yaml:"smtp_server"`   // SMTPサーバーのホスト名またはIPアドレス
+	SMTPPort   string   `yaml:"smtp_port"`     // SMTPサーバーのポート番号
+	From       string   `yaml:"from"`          // 送信元メールアドレス
+	To         []string `yaml:"to"`            // 送信先メールアドレスのリスト
+	Cc         []string `yaml:"cc,omitempty"`  // Cc（カーボンコピー）宛先、省略可能
+	Bcc        []string `yaml:"bcc,omitempty"` // Bcc（ブラインドカーボンコピー）宛先、省略可能
+	Subject    string   `yaml:"subject"`       // メールの件名
+	Message    string   `yaml:"messages"`      // メール本文のテンプレート
 }
 
+// 設定ファイルを読み込む
 func loadConfig(filename string) (*Config, error) {
-
 	// 設定ファイルを読み込む
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
+
+	// YAMLデータをConfig構造体にデコード
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	return &config, nil
 }
 
+// SSHコマンドを実行する
 func runSSHCommand(server Server) (string, error) {
-
-	// SSHクライアントを作成
-	var authMethod ssh.AuthMethod
-
-	// パスワードが設定されている場合はパスワード認証を使う
-	if server.Password != "" {
-		authMethod = ssh.Password(server.Password)
-	} else {
-		// パスワードが設定されてない場合は、SSHエージェントを使う
-		sshAgentSock := os.Getenv("SSH_AUTH_SOCK")
-		if sshAgentSock == "" {
-			return "", fmt.Errorf("SSH_AUTH_SOCK variable is not found")
-		}
-
-		// SSHエージェントに接続して秘密鍵を取得
-		conn, err := net.Dial("unix", sshAgentSock)
-		if err != nil {
-			return "", fmt.Errorf("failed to connect to SSH agent: %v", err)
-		}
-		defer conn.Close()
-
-		// SSHエージェントクライアントを作成
-		agentClient := agent.NewClient(conn)
-		signers, err := agentClient.Signers()
-		if err != nil {
-			return "", fmt.Errorf("failed to get signers from SSH agent: %v", err)
-		}
-		authMethod = ssh.PublicKeys(signers...)
+	// SSH認証方法を取得
+	authMethod, err := getSSHAuthMethod(server.Password)
+	if err != nil {
+		return "", err
 	}
 
-	config := &ssh.ClientConfig{
+	// SSHクライアント設定を作成
+	clientConfig := &ssh.ClientConfig{
 		User:            server.User,
 		Auth:            []ssh.AuthMethod{authMethod},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ホストキーの検証を無効化（本番環境では注意）
 	}
 
-	// SSHサーバーに接続
-	address := fmt.Sprintf("%s:%s", server.Host, server.Port)
-	client, err := ssh.Dial("tcp", address, config)
+	// SSH接続を確立
+	address := fmt.Sprintf("%s:%s", server.Host, server.GetPort()) // GetPortでポートを取得
+	client, err := ssh.Dial("tcp", address, clientConfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to connect to %s: %v", server.Host, err)
+		return "", fmt.Errorf("failed to connect to %s: %w", server.Host, err)
 	}
 	defer client.Close()
 
 	// SSHセッションを作成
 	session, err := client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("failed to create session on %s: %v", server.Host, err)
+		return "", fmt.Errorf("failed to create session on %s: %w", server.Host, err)
 	}
 	defer session.Close()
 
-	// コマンドを実行して出力を取得
+	// コマンドの実行と結果の取得
 	var stdout, stderr bytes.Buffer
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 	if err := session.Run(server.Commands); err != nil {
-		return "", fmt.Errorf("failed to run command on %s: %v, stderr: %s", server.Host, err, stderr.String())
+		return "", fmt.Errorf("failed to run command on %s: %w, stderr: %s", server.Host, err, stderr.String())
 	}
 
-	// 標準出力を返す
-	return stdout.String(), nil
+	// コマンドの出力を返す
+	return strings.TrimSpace(stdout.String()), nil
 }
 
-func sendEmail(emailConfig Email, alerts []string) error {
-
-	// アラートがない場合は送信しない
-	if len(alerts) == 0 {
-		return nil // 送信不要
+// SSH認証方法を取得する
+func getSSHAuthMethod(password string) (ssh.AuthMethod, error) {
+	// パスワード認証を使用
+	if password != "" {
+		return ssh.Password(password), nil
 	}
 
-	// メールのヘッダーとボディを作成
-	body := fmt.Sprintf("%s\n%s", emailConfig.Message, strings.Join(alerts, "\n"))
-	subject := emailConfig.Subject
-	msg := fmt.Sprintf("From: %s\nTo: %s\nSubject: %s\n%s", emailConfig.From, emailConfig.To, subject, body)
+	// SSHエージェントを使用
+	sshAgentSock := os.Getenv("SSH_AUTH_SOCK")
+	if sshAgentSock == "" {
+		return nil, fmt.Errorf("SSH_AUTH_SOCK variable is not found")
+	}
 
-	// SMTPサーバーに接続してメールを送信
-	addr := fmt.Sprintf("%s:%s", emailConfig.SMTPServer, emailConfig.SMTPPort)
-	conn, err := net.Dial("tcp", addr)
+	// SSHエージェントに接続
+	conn, err := net.Dial("unix", sshAgentSock)
 	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP server: %v", err)
+		return nil, fmt.Errorf("failed to connect to SSH agent: %w", err)
 	}
 	defer conn.Close()
 
-	// SMTPクライアントを作成してメールを送信
-	client, err := smtp.NewClient(conn, emailConfig.SMTPServer)
+	// SSHエージェントから署名者を取得
+	agentClient := agent.NewClient(conn)
+	signers, err := agentClient.Signers()
 	if err != nil {
-		return fmt.Errorf("failed to create SMTP client: %v", err)
+		return nil, fmt.Errorf("failed to get signers from SSH agent: %w", err)
 	}
-	defer client.Close()
+	return ssh.PublicKeys(signers...), nil
+}
 
-	// MAIL FROMとRCPT TOコマンドを送信
-	if err := client.Mail(emailConfig.From); err != nil {
-		return fmt.Errorf("failed to set From address: %v", err)
-	}
-	if err := client.Rcpt(emailConfig.To); err != nil {
-		return fmt.Errorf("failed to set To address: %v", err)
+// メールを送信する
+func sendEmail(emailConfig Email, alerts []string) error {
+	if len(alerts) == 0 {
+		return nil
 	}
 
-	// DATAコマンドを送信してメールヘッダーとボディを送信
-	w, err := client.Data()
+	// メール本文を作成
+	body := fmt.Sprintf("%s\n\n%s", emailConfig.Message, strings.Join(alerts, "\n"))
+	msg := fmt.Sprintf("From: %s\nTo: %s\n",
+		emailConfig.From,
+		strings.Join(emailConfig.To, ", "),
+	)
+
+	// Ccが設定されている場合のみヘッダーに追加
+	if len(emailConfig.Cc) > 0 {
+		msg += fmt.Sprintf("Cc: %s\n", strings.Join(emailConfig.Cc, ", "))
+	}
+
+	// メール件名と本文を追加
+	msg += fmt.Sprintf("Subject: %s\n\n%s", emailConfig.Subject, body)
+
+	// 宛先リストにTo、Cc、Bccを含める
+	recipients := append(emailConfig.To, emailConfig.Cc...)
+	recipients = append(recipients, emailConfig.Bcc...)
+
+	// SMTPサーバーのアドレスを構築
+	addr := fmt.Sprintf("%s:%s", emailConfig.SMTPServer, emailConfig.SMTPPort)
+
+	// 認証なしでメールを送信
+	err := smtp.SendMail(addr, nil, emailConfig.From, recipients, []byte(msg))
 	if err != nil {
-		return fmt.Errorf("failed to start email body: %v", err)
-	}
-	_, err = w.Write([]byte(msg))
-	if err != nil {
-		return fmt.Errorf("failed to write email body: %v", err)
-	}
-	if err = w.Close(); err != nil {
-		return fmt.Errorf("failed to close email body: %v", err)
+		return fmt.Errorf("failed to send email: %w", err)
 	}
 
-	// QUITコマンドを送信して接続を閉じる
-	if err = client.Quit(); err != nil {
-		return fmt.Errorf("failed to quit SMTP client: %v", err)
-	}
-
-	// ログにメール送信成功を出力
 	log.Println("Email alert sent successfully")
 	return nil
 }
 
+// メイン処理
 func main() {
-
 	// 設定ファイルを読み込む
 	config, err := loadConfig("config.yaml")
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// 各サーバーに対してSSHコマンドを実行し、閾値を超えていたらアラートを送信する
 	var alerts []string
-	var sendAlert bool
+	// 各サーバーに対してコマンドを実行
 	for _, server := range config.Servers {
-
-		// SSHコマンドを実行し、出力を取得する
 		output, err := runSSHCommand(server)
 		if err != nil {
-			log.Printf("SSH execution failed on %s: %v", server.Host, err)
+			log.Printf("Error executing command on %s: %v", server.Host, err)
 			continue
 		}
 
-		// 出力を数値に変換する
-		outputValue, err := strconv.Atoi(strings.TrimSpace(output))
+		// コマンドの出力を数値に変換
+		value, err := strconv.Atoi(output)
 		if err != nil {
-			log.Printf("Failed to parse output on %s: %v", server.Host, err)
+			log.Printf("Error parsing output on %s: %v", server.Host, err)
 			continue
 		}
 
-		// もし閾値を超えていたらマークを付けて、sendAlertをtrueにする
+		// しきい値を超えた場合にマーカーを付ける
 		marker := ""
-		if outputValue >= server.Threshold {
+		if value >= server.Threshold {
 			marker = " *"
-			sendAlert = true
 		}
-		alerts = append(alerts, fmt.Sprintf("%s: %d%s", server.Host, outputValue, marker))
+		alerts = append(alerts, fmt.Sprintf("%s: %d%s", server.Host, value, marker))
 	}
 
-	// もしsendAlertがtrueなら、メールを送信する
-	if sendAlert {
-		sendEmail(config.Email, alerts)
+	// アラートメールを送信
+	if err := sendEmail(config.Email, alerts); err != nil {
+		log.Printf("Error sending email: %v", err)
 	}
 }

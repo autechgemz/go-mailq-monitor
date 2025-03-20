@@ -163,13 +163,37 @@ func sendEmail(emailConfig Email, alerts []string) error {
 	recipients := append(emailConfig.To, emailConfig.Cc...)
 	recipients = append(recipients, emailConfig.Bcc...)
 
-	// SMTPサーバーのアドレスを構築
+	// SMTPサーバーに接続
 	addr := fmt.Sprintf("%s:%s", emailConfig.SMTPServer, emailConfig.SMTPPort)
-
-	// 認証なしでメールを送信
-	err := smtp.SendMail(addr, nil, emailConfig.From, recipients, []byte(msg))
+	client, err := smtp.Dial(addr)
 	if err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
+		return fmt.Errorf("failed to connect to SMTP server: %w", err)
+	}
+	defer client.Close()
+
+	// STARTTLSをスキップしてTLSを無効化
+	// SMTPサーバーに送信元を設定
+	if err := client.Mail(emailConfig.From); err != nil {
+		return fmt.Errorf("failed to set sender: %w", err)
+	}
+
+	// 宛先を設定
+	for _, recipient := range recipients {
+		if err := client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("failed to set recipient %s: %w", recipient, err)
+		}
+	}
+
+	// メールデータを送信
+	wc, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("failed to send email data: %w", err)
+	}
+	defer wc.Close()
+
+	// メール本文を送信
+	if _, err := wc.Write([]byte(msg)); err != nil {
+		return fmt.Errorf("failed to write email body: %w", err)
 	}
 
 	log.Println("Email alert sent successfully")

@@ -61,17 +61,17 @@ servers:
   - user: "vagrant"
     host: "192.168.56.201"
     port: "22"
-    commands: "sudo find /var/spool/postfix | wc -l"
+    commands: "sudo find /var/spool/postfix/{maildrop,incoming,active,deferred,hold} -type f 2>/dev/null | wc -l"
     threshold: 100
   - user: "vagrant"
     host: "192.168.56.202"
     port: "22"
-    commands: "sudo find /var/spool/postfix | wc -l"
+    commands: "sudo find /var/spool/postfix/{maildrop,incoming,active,deferred,hold} -type f 2>/dev/null | wc -l"
     threshold: 10
   - user: "vagrant"
     host: "192.168.56.203"
     port: "22"
-    commands: "sudo find /var/spool/postfix | wc -l"
+    commands: "sudo find /var/spool/postfix/{maildrop,incoming,active,deferred,hold} -type f 2>/dev/null | wc -l"
     threshold: 10
 
 # メール送信に関する設定です
@@ -80,7 +80,9 @@ servers:
 # smtp_server: SMTPサーバのIPアドレス or ホスト名 (複数指定不可)
 # smtp_port: SMTPサーバのポート番号
 # from: 送信元メールアドレス
-# to: 送信先メールアドレス (複数指定不可)
+# to: 送信先メールアドレス (複数指定可)
+# cc: 送信先メールアドレス (複数指定可、省略可)
+# bcc: 送信先メールアドレス (複数指定不可、省略可)
 # subject: メールの件名
 # body_template: メールの本文 (アラートに付与するメッセージです。複数行可)
 email:
@@ -126,10 +128,13 @@ Cc: cc1@example.com, cc2@example.com
 Subject: Mail Queue Alert
 
 こちらはメールキューのアラートメールです。
-
 メールキューがしきい値を超えました。
 
 192.168.56.201: 58
 192.168.56.202: 86 *
 192.168.56.203: 46 *
 ```
+
+## ライセンス
+
+このプロジェクトは[MITライセンス](https://opensource.org/licenses/MIT)の下で提供されています。

@@ -209,6 +209,7 @@ func main() {
 	}
 
 	var alerts []string
+	var alertMaker bool
 	// 各サーバーに対してコマンドを実行
 	for _, server := range config.Servers {
 		output, err := runSSHCommand(server)
@@ -224,16 +225,19 @@ func main() {
 			continue
 		}
 
-		// しきい値を超えた場合にマーカーを付ける
-		marker := ""
+		// しきい値を超えた場合のみアラートを追加
 		if value >= server.Threshold {
-			marker = " *"
+			alerts = append(alerts, fmt.Sprintf("%s: %d *", server.Host, value))
+			alertMaker = true
+		} else {
+			alerts = append(alerts, fmt.Sprintf("%s: %d", server.Host, value))
 		}
-		alerts = append(alerts, fmt.Sprintf("%s: %d%s", server.Host, value, marker))
 	}
 
-	// アラートメールを送信
-	if err := sendEmail(config.Email, alerts); err != nil {
-		log.Printf("Error sending email: %v", err)
+	// アラートがある場合のみメールを送信
+	if alertMaker {
+		if err := sendEmail(config.Email, alerts); err != nil {
+			log.Printf("Error sending email: %v", err)
+		}
 	}
 }
